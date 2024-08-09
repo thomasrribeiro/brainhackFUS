@@ -149,3 +149,63 @@ def get_data(medium, time_axis, sources, sensor_positions):
     data = np.squeeze(pressure.params[:, sensor_positions[0], sensor_positions[1]])
     
     return pressure, data
+
+def compute_time_delays_for_point(x1: np.ndarray, x: int, delta_y: int, c: float, dx: np.ndarray) -> np.ndarray:
+    """
+    Compute the time delays from a point x to every sensor.
+
+    Parameters
+    ----------
+    x1 : np.ndarray
+        x-coordinates of the sensors in grid points.
+    x : int
+        Position of the point of interest in grid points.
+    delta_y : int
+        Difference in y-coordinates of the sensors and the point of interest, in grid points.
+    c : float
+        Speed of sound in m/s.
+    dx : np.ndarray
+        Grid spacing in each dimension in meters.
+
+    Returns
+    -------
+    time_delays : np.ndarray
+        Time delays, in seconds.
+    """
+    scaled_y = delta_y * dx[1]
+    scaled_dx = (x1 - x) * dx[0]
+    return (scaled_y + np.sqrt(scaled_y*scaled_y + scaled_dx * scaled_dx)) / c
+
+def compute_signal(data, element_positions, pt_x, delta_y, time, time_axis, c, dx):
+    """
+    Compute the signal at a given point.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        Pressure data, shape (num_timesteps, num_sensors)
+    element_positions : np.ndarray
+        Positions of the sensors in grid points.
+    pt_x : int
+        Position of the point of interest in grid points.
+    delta_y : int
+        Difference in y-coordinates of the sensors and the point of interest, in grid points.
+    time : int
+        Time, in time steps.
+    time_axis : jwave.geometry.TimeAxis
+        Time axis.
+    c : float
+        Speed of sound in m/s.
+    dx : np.ndarray
+        Grid spacing in each dimension in meters.
+
+    Returns
+    -------
+    signal : float
+        Signal at the point of interest.
+    """
+    times = time - np.round(compute_time_delays_for_point(element_positions[0], pt_x, delta_y, c, dx) / time_axis.dt).astype(int)
+    augmented_times = np.stack([times, np.arange(0, times.shape[0])])
+    augmented_times = augmented_times[:, 0 < augmented_times[0]]
+    augmented_times = augmented_times[:, augmented_times[0] < data.shape[0]].tolist()
+    return np.sum(data[augmented_times[0], augmented_times[1]]).item() * time_axis.dt
