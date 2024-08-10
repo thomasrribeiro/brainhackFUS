@@ -27,7 +27,65 @@ def get_domain(N, dx):
     return domain
 
 
-def get_point_medium(domain, c0=1500, rho0=1000, pml_size=20):
+def get_background_map(domain, c0=1500, rho0=1000):
+
+    np.random.seed(28)
+    N = domain.N
+
+    # define a random distribution of scatterers for the medium
+    background_map_mean = 1
+    background_map_std = 0.008
+    background_map = background_map_mean + background_map_std * np.random.randn(N[0], N[1])
+    sound_speed = c0 * np.ones(N) * background_map
+    density = rho0 * np.ones(N) * background_map
+
+    return sound_speed, density
+
+def get_single_scatterer(domain, sound_speed, density, c0, rho0, 
+                         scatterer_radius, scatterer_contrast):
+    """
+    Get a single scatterer.
+
+    Parameters
+    ----------
+    domain : jwave.geometry.Domain
+        Spatial domain.
+    sound_speed : np.ndarray
+        Speed of sound.
+    density : np.ndarray
+        Density.
+    scatterer_radius : int
+        Radius of scatterers in grid points.
+    scatterer_contrast : float
+        Contrast of scatterers.
+    c0 : float
+        Reference speed of sound in m/s.
+    rho0 : float
+        Reference density in kg/m^3.
+
+    Returns
+    -------
+    sound_speed : np.ndarray
+        Speed of sound.
+    density : np.ndarray
+        Density.
+    """
+
+    N = domain.N
+
+    # define highly scattering region
+    scatterer_positions = np.array([[N[0]//2, N[1]//2]], dtype=int)
+    scatterer_map = np.zeros(N)
+    x, y = np.ogrid[:N[0], :N[1]]
+    for scatterer_position in scatterer_positions:
+        scatterer_map[(x - scatterer_position[0])**2 + (y - scatterer_position[1])**2 <= (scatterer_radius)**2] = 1
+    sound_speed[scatterer_map == 1] = c0*scatterer_contrast
+    density[scatterer_map == 1] = rho0*scatterer_contrast
+
+    return sound_speed, density
+
+def get_point_medium(domain, c0=1500, rho0=1000, pml_size=20, 
+                     scatterer_radius=2, scatterer_contrast=1.1):
     """
     Get an acoustic medium with a single point scatterer.
 
@@ -47,33 +105,46 @@ def get_point_medium(domain, c0=1500, rho0=1000, pml_size=20):
     medium : jwave.medium.Medium
         Medium.
     """
-
-    np.random.seed(28)
-    N = domain.N
-
-    # define a random distribution of scatterers for the medium
-    background_map_mean = 1
-    background_map_std = 0.008
-    background_map = background_map_mean + background_map_std * np.random.randn(N[0], N[1])
-    sound_speed = c0 * np.ones(N) * background_map
-    density = rho0 * np.ones(N) * background_map
-
-    # define highly scattering region
-    scatterer_radius = 2 # radius of scatterers [grid points]
-    scatterer_contrast = 1.1 # contrast of scatterers
-    scatterer_positions = np.array([[N[0]//2, N[1]//2]], dtype=int)
-    scatterer_map = np.zeros(N)
-    x, y = np.ogrid[:N[0], :N[1]]
-    for scatterer_position in scatterer_positions:
-        scatterer_map[(x - scatterer_position[0])**2 + (y - scatterer_position[1])**2 <= (scatterer_radius)**2] = 1
-    sound_speed[scatterer_map == 1] = c0*scatterer_contrast
-    density[scatterer_map == 1] = rho0*scatterer_contrast
-
-    # define medium
+    sound_speed, density = get_background_map(domain, c0, rho0)
+    sound_speed, density = get_single_scatterer(domain, sound_speed, density, c0, rho0, scatterer_radius, scatterer_contrast)
     sound_speed = FourierSeries(np.expand_dims(sound_speed, -1), domain)
     density = FourierSeries(np.expand_dims(density, -1), domain)
     medium = Medium(domain=domain, sound_speed=sound_speed, density=density, pml_size=pml_size)
+    return medium
 
+def get_skull_point_medium(domain, skull_slice, c0=1500, rho0=1000, pml_size=20,
+                           scatterer_radius=2, scatterer_contrast=1.1):
+    """
+    Get an acoustic medium with a skull and single point scatterer.
+
+    Parameters
+    ----------
+    domain : jwave.geometry.Domain
+        Spatial domain.
+    c0 : float
+        Reference speed of sound in m/s.
+    rho0 : float
+        Reference density in kg/m^3.
+    pml_size : int
+        Size of the PML in grid points.
+
+    Returns
+    -------
+    medium : jwave.medium.Medium
+        Medium.
+    """
+
+    N = domain.N
+    sound_speed, density = get_background_map(domain, c0, rho0)
+    sound_speed, density = get_single_scatterer(domain, sound_speed, density, c0, rho0, scatterer_radius, scatterer_contrast)
+
+    skull_mask = skull_slice > 20000
+    sound_speed[skull_mask] = 2700
+    density[skull_mask] = 1800
+
+    sound_speed = FourierSeries(np.expand_dims(sound_speed, -1), domain)
+    density = FourierSeries(np.expand_dims(density, -1), domain)
+    medium = Medium(domain=domain, sound_speed=sound_speed, density=density, pml_size=pml_size)
     return medium
 
 
