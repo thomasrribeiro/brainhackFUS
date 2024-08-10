@@ -27,14 +27,14 @@ def get_domain(N, dx):
     return domain
 
 
-def get_background_map(domain, c0=1500, rho0=1000):
+def get_background_map(domain, c0=1500, rho0=1000, seed=28):
 
-    np.random.seed(28)
+    np.random.seed(seed)
     N = domain.N
 
     # define a random distribution of scatterers for the medium
     background_map_mean = 1
-    background_map_std = 0.008
+    background_map_std = 0.004
     background_map = background_map_mean + background_map_std * np.random.randn(N[0], N[1])
     sound_speed = c0 * np.ones(N) * background_map
     density = rho0 * np.ones(N) * background_map
@@ -83,6 +83,33 @@ def get_single_scatterer(domain, sound_speed, density, c0, rho0,
     density[scatterer_map == 1] = rho0*scatterer_contrast
 
     return sound_speed, density
+
+def get_homogeneous_medium(domain, c0=1500, rho0=1000, pml_size=20):
+    """
+    Get a homogeneous acoustic medium.
+
+    Parameters
+    ----------
+    domain : jwave.geometry.Domain
+        Spatial domain.
+    c0 : float
+        Reference speed of sound in m/s.
+    rho0 : float
+        Reference density in kg/m^3.
+    pml_size : int
+        Size of the PML in grid points.
+
+    Returns
+    -------
+    medium : jwave.medium.Medium
+        Medium.
+    """
+    sound_speed = c0 * np.ones(domain.N)
+    density = rho0 * np.ones(domain.N)
+    sound_speed = FourierSeries(np.expand_dims(sound_speed, -1), domain)
+    density = FourierSeries(np.expand_dims(density, -1), domain)
+    medium = Medium(domain=domain, sound_speed=sound_speed, density=density, pml_size=pml_size)
+    return medium
 
 def get_point_medium(domain, c0=1500, rho0=1000, pml_size=20, 
                      scatterer_radius=2, scatterer_contrast=1.1):
@@ -148,7 +175,7 @@ def get_skull_point_medium(domain, skull_slice, c0=1500, rho0=1000, pml_size=20,
     return medium
 
 
-def get_plane_wave_excitation(domain, time_axis, magnitude, frequency, positions):
+def get_plane_wave_excitation(domain, time_axis, magnitude, frequency, positions, delay_s=0):
     """
     Get a plane wave excitation.
     
@@ -164,6 +191,8 @@ def get_plane_wave_excitation(domain, time_axis, magnitude, frequency, positions
         Frequency of the excitation.
     positions : np.ndarray
         Positions of the sources in grid points.
+    delay_s : float
+        Delay in seconds.
 
     Returns
     -------
@@ -173,17 +202,25 @@ def get_plane_wave_excitation(domain, time_axis, magnitude, frequency, positions
     
     t = jnp.arange(0, time_axis.t_end, time_axis.dt)
     s = magnitude * jnp.sin(2 * jnp.pi * frequency * t)
-    variance = 2/frequency
+    variance = 1/frequency
     mean = 3*variance
-    s = gaussian_window(s, t, mean, variance)
+    ss = []
+    for i in range(positions.shape[1]):
+        if delay_s < 0:
+            ss.append(gaussian_window(s, t, mean + (i-64) * delay_s * time_axis.dt, variance))
+        elif delay_s > 0:
+            ss.append(gaussian_window(s, t, mean + i * delay_s * time_axis.dt, variance))
+        else:
+            ss.append(gaussian_window(s, t, mean, variance))
+    
     sources = Sources(
         positions=tuple(map(tuple, positions)),
-        signals=jnp.vstack([s for _ in range(positions.shape[1])]),
+        signals=jnp.vstack([ss[i] for i in range(positions.shape[1])]),
         dt=time_axis.dt,
         domain=domain,
     )
 
-    return sources
+    return sources, ss, s
 
 
 def get_data(medium, time_axis, sources, sensor_positions):
