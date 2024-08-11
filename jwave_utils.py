@@ -9,7 +9,7 @@ from jwave.signal_processing import gaussian_window
 
 def get_domain(N, dx):
     """
-    Get the spatial domain.
+    Get the jwave spatial domain.
 
     Parameters
     ----------
@@ -27,64 +27,34 @@ def get_domain(N, dx):
     return domain
 
 
-def get_background_map(domain, c0=1500, rho0=1000, seed=28):
-
-    np.random.seed(seed)
-    N = domain.N
-
-    # define a random distribution of scatterers for the medium
-    background_map_mean = 1
-    background_map_std = 0.004
-    background_map = background_map_mean + background_map_std * np.random.randn(N[0], N[1])
-    sound_speed = c0 * np.ones(N) * background_map
-    density = rho0 * np.ones(N) * background_map
-
-    return sound_speed, density
-
-def get_single_scatterer(domain, sound_speed, density, c0, rho0, 
-                         scatterer_radius, scatterer_contrast):
+def get_background(N, mean, std, random_seed=28):
     """
-    Get a single scatterer.
+    Get a random distribution of background scatterers.
 
     Parameters
     ----------
-    domain : jwave.geometry.Domain
-        Spatial domain.
-    sound_speed : np.ndarray
-        Speed of sound.
-    density : np.ndarray
-        Density.
-    scatterer_radius : int
-        Radius of scatterers in grid points.
-    scatterer_contrast : float
-        Contrast of scatterers.
-    c0 : float
-        Reference speed of sound in m/s.
-    rho0 : float
-        Reference density in kg/m^3.
+    N : np.ndarray
+        Number of grid points in each dimension.
+    mean : float
+        Mean of the background map.
+    std : float
+        Standard deviation of the background map.
+    random_seed : int
+        Seed for the random number generator.
 
     Returns
     -------
-    sound_speed : np.ndarray
-        Speed of sound.
-    density : np.ndarray
-        Density.
+    background_map : np.ndarray
+        Map of background scatterers.
     """
+    np.random.seed(random_seed)
+    background_map = mean + std * np.random.randn(N[0], N[1])
+    return background_map
 
-    N = domain.N
 
-    # define highly scattering region
-    scatterer_positions = np.array([[N[0]//2, N[1]//2]], dtype=int)
-    scatterer_map = np.zeros(N)
-    x, y = np.ogrid[:N[0], :N[1]]
-    for scatterer_position in scatterer_positions:
-        scatterer_map[(x - scatterer_position[0])**2 + (y - scatterer_position[1])**2 <= (scatterer_radius)**2] = 1
-    sound_speed[scatterer_map == 1] = c0*scatterer_contrast
-    density[scatterer_map == 1] = rho0*scatterer_contrast
-
-    return sound_speed, density
-
-def get_homogeneous_medium(domain, c0=1500, rho0=1000, pml_size=20):
+def get_homogeneous_medium(domain, c0=1500, rho0=1000, pml_size=20, 
+                           background_mean=1, background_std=0.008, 
+                           background_seed=28):
     """
     Get a homogeneous acoustic medium.
 
@@ -98,6 +68,12 @@ def get_homogeneous_medium(domain, c0=1500, rho0=1000, pml_size=20):
         Reference density in kg/m^3.
     pml_size : int
         Size of the PML in grid points.
+    background_mean : float
+        Mean of the background map.
+    background_std : float
+        Standard deviation of the background map.
+    background_seed : int
+        Seed for the random number generator.
 
     Returns
     -------
@@ -106,15 +82,53 @@ def get_homogeneous_medium(domain, c0=1500, rho0=1000, pml_size=20):
     """
     sound_speed = c0 * np.ones(domain.N)
     density = rho0 * np.ones(domain.N)
+
+    # add background noise
+    background_map = get_background(domain.N, mean=background_mean, 
+                                    std=background_std, 
+                                    random_seed=background_seed)
+    sound_speed = sound_speed * background_map
+    density = density * background_map
+
+    # get jwave discretized medium
     sound_speed = FourierSeries(np.expand_dims(sound_speed, -1), domain)
     density = FourierSeries(np.expand_dims(density, -1), domain)
     medium = Medium(domain=domain, sound_speed=sound_speed, density=density, pml_size=pml_size)
     return medium
 
-def get_point_medium(domain, c0=1500, rho0=1000, pml_size=20, 
+
+def get_scatterers(N, positions, radius, contrast):
+    """
+    Get scatterers.
+
+    Parameters
+    ----------
+    N : np.ndarray
+        Number of grid points in each dimension.
+    positions : np.ndarray
+        Positions of the scatterers in grid points.
+    radius : int
+        Radius of scatterers in grid points.    
+    contrast : float
+        Contrast of scatterers.
+
+    Returns
+    -------
+    scatterer_map : np.ndarray
+        Map of scatterers.
+    """
+    scatterer_map = np.zeros(N)
+    x, y = np.ogrid[:N[0], :N[1]]
+    for position in positions:
+        scatterer_map[(x - position[0])**2 + (y - position[1])**2 <= (radius)**2] = 1
+    return scatterer_map
+
+
+def get_point_medium(domain, c0=1500, rho0=1000, pml_size=20,
+                     background_mean=1, background_std=0.008, background_seed=28, 
                      scatterer_radius=2, scatterer_contrast=1.1):
     """
-    Get an acoustic medium with a single point scatterer.
+    Get an acoustic medium with a single, centered point scatterer.
 
     Parameters
     ----------
@@ -126,18 +140,44 @@ def get_point_medium(domain, c0=1500, rho0=1000, pml_size=20,
         Reference density in kg/m^3.
     pml_size : int
         Size of the PML in grid points.
+    background_mean : float
+        Mean of the background map.
+    background_std : float
+        Standard deviation of the background map.
+    background_seed : int
+        Seed for the random number generator.
+    scatterer_radius : int
+        Radius of the scatterer in grid points.
+    scatterer_contrast : float
+        Contrast of the scatterer.
 
     Returns
     -------
     medium : jwave.medium.Medium
         Medium.
     """
-    sound_speed, density = get_background_map(domain, c0, rho0)
-    sound_speed, density = get_single_scatterer(domain, sound_speed, density, c0, rho0, scatterer_radius, scatterer_contrast)
+    sound_speed = c0 * np.ones(domain.N)
+    density = rho0 * np.ones(domain.N)
+
+    # add background noise
+    background_map = get_background(domain.N, mean=background_mean, 
+                                    std=background_std, 
+                                    random_seed=background_seed)
+    sound_speed = sound_speed * background_map
+    density = density * background_map
+
+    # add scatterer
+    scatterer_positions = np.array([[domain.N[0]//2, domain.N[1]//2]], dtype=int)
+    scatterer_map = get_scatterers(domain.N, scatterer_positions, scatterer_radius, scatterer_contrast)
+    sound_speed[scatterer_map == 1] = c0*scatterer_contrast
+    density[scatterer_map == 1] = rho0*scatterer_contrast
+
+    # get jwave discretized medium
     sound_speed = FourierSeries(np.expand_dims(sound_speed, -1), domain)
     density = FourierSeries(np.expand_dims(density, -1), domain)
     medium = Medium(domain=domain, sound_speed=sound_speed, density=density, pml_size=pml_size)
     return medium
+
 
 def get_skull_point_medium(domain, skull_slice, c0=1500, rho0=1000, pml_size=20,
                            scatterer_radius=2, scatterer_contrast=1.1):
@@ -175,7 +215,7 @@ def get_skull_point_medium(domain, skull_slice, c0=1500, rho0=1000, pml_size=20,
     return medium
 
 
-def get_plane_wave_excitation(domain, time_axis, magnitude, frequency, positions, delay_s=0):
+def get_plane_wave_excitation(domain, time_axis, magnitude, frequency, positions, signal_delay=0):
     """
     Get a plane wave excitation.
     
@@ -191,36 +231,40 @@ def get_plane_wave_excitation(domain, time_axis, magnitude, frequency, positions
         Frequency of the excitation.
     positions : np.ndarray
         Positions of the sources in grid points.
-    delay_s : float
-        Delay in seconds.
+    signal_delay : float
+        Delay in timepoints.
 
     Returns
     -------
     sources : jwave.geometry.Sources
         Sources.
+    signal : np.ndarray
+        Signal emitted at each transmitter.
+    carrier_signal : np.ndarray
+        Carrier signal at the center frequency of the probe.
     """
-    
+    nelements = positions.shape[1]
     t = jnp.arange(0, time_axis.t_end, time_axis.dt)
-    s = magnitude * jnp.sin(2 * jnp.pi * frequency * t)
+    carrier_signal = magnitude * jnp.sin(2 * jnp.pi * frequency * t)
     variance = 1/frequency
     mean = 3*variance
-    ss = []
+    signal = []
     for i in range(positions.shape[1]):
-        if delay_s < 0:
-            ss.append(gaussian_window(s, t, mean + (i-64) * delay_s * time_axis.dt, variance))
-        elif delay_s > 0:
-            ss.append(gaussian_window(s, t, mean + i * delay_s * time_axis.dt, variance))
+        if signal_delay < 0:
+            signal.append(gaussian_window(carrier_signal, t, mean + (i-nelements) * signal_delay * time_axis.dt, variance))
+        elif signal_delay > 0:
+            signal.append(gaussian_window(carrier_signal, t, mean + i * signal_delay * time_axis.dt, variance))
         else:
-            ss.append(gaussian_window(s, t, mean, variance))
+            signal.append(gaussian_window(carrier_signal, t, mean, variance))
     
     sources = Sources(
         positions=tuple(map(tuple, positions)),
-        signals=jnp.vstack([ss[i] for i in range(positions.shape[1])]),
+        signals=jnp.vstack([signal[i] for i in range(positions.shape[1])]),
         dt=time_axis.dt,
         domain=domain,
     )
 
-    return sources, ss, s
+    return sources, signal, carrier_signal
 
 
 def get_data(medium, time_axis, sources, sensor_positions):
