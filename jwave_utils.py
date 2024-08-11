@@ -233,9 +233,9 @@ def get_skull_point_medium(domain, skull_slice,
     density[scatterer_map == 1] = rho0*scatterer_contrast
 
     # add skull
-    # skull_mask = skull_slice > 20000
-    # sound_speed[skull_mask] = 2700
-    # density[skull_mask] = 1800
+    skull_mask = skull_slice > 20000
+    sound_speed[skull_mask] = 2700
+    density[skull_mask] = 1800
 
     # get jwave discretized medium
     sound_speed = FourierSeries(np.expand_dims(sound_speed, -1), domain)
@@ -279,6 +279,7 @@ def get_plane_wave_excitation(domain, time_axis, magnitude, frequency, positions
     mean = 3*variance
     signal = []
     for i in range(positions.shape[1]):
+        # TODO(vincent): this assumes the positions are all 1 apart
         if signal_delay < 0:
             signal.append(gaussian_window(carrier_signal, t, mean + (i-nelements) * signal_delay * time_axis.dt, variance))
         elif signal_delay > 0:
