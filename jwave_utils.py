@@ -179,13 +179,12 @@ def get_point_medium(domain, scatterer_positions, scatterer_radius=2, scatterer_
     medium = Medium(domain=domain, sound_speed=sound_speed, density=density, pml_size=pml_size)
     return medium
 
-
-def get_skull_point_medium(domain, skull_slice, 
-                           scatterer_positions, scatterer_radius=2, scatterer_contrast=1.1,
+def get_skull_medium(domain, skull_slice, 
+                           scatterer_positions=None, scatterer_radius=2, scatterer_contrast=1.1,
                            c0=1500, rho0=1000, pml_size=20,
                            background_mean=1, background_std=0.008, background_seed=28):
     """
-    Get an acoustic medium with a skull and single point scatterer.
+    Get an acoustic medium with a skull and optionally, defined point scatterers.
 
     Parameters
     ----------
@@ -228,14 +227,15 @@ def get_skull_point_medium(domain, skull_slice,
     density = density * background_map
 
     # add scatterers
-    scatterer_map = get_scatterers(domain.N, scatterer_positions, scatterer_radius, scatterer_contrast)
-    sound_speed[scatterer_map == 1] = c0*scatterer_contrast
-    density[scatterer_map == 1] = rho0*scatterer_contrast
+    if scatterer_positions is not None:
+        scatterer_map = get_scatterers(domain.N, scatterer_positions, scatterer_radius, scatterer_contrast)
+        sound_speed[scatterer_map == 1] = c0*scatterer_contrast
+        density[scatterer_map == 1] = rho0*scatterer_contrast
 
     # add skull
-    # skull_mask = skull_slice > 20000
-    # sound_speed[skull_mask] = 2700
-    # density[skull_mask] = 1800
+    skull_mask = skull_slice > 20000
+    sound_speed[skull_mask] = 2700
+    density[skull_mask] = 1800
 
     # get jwave discretized medium
     sound_speed = FourierSeries(np.expand_dims(sound_speed, -1), domain)
