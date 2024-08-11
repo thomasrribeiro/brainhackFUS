@@ -2,7 +2,7 @@ import numpy as np
 import jax.numpy as jnp
 from jax import jit
 from jwave import FourierSeries
-from jwave.geometry import Domain, Medium, Sources
+from jwave.geometry import Domain, Medium, Sources, Sensors
 from jwave.acoustics import simulate_wave_propagation
 from jwave.signal_processing import gaussian_window
 
@@ -311,8 +311,8 @@ def get_data(sound_speed, density, domain, time_axis, sources, sensor_positions,
         Pressure data.
     """
     # get medium
-    sound_speed = FourierSeries(np.expand_dims(sound_speed, -1), domain)
-    density = FourierSeries(np.expand_dims(density, -1), domain)
+    sound_speed = FourierSeries(jnp.expand_dims(sound_speed, -1), domain)
+    density = FourierSeries(jnp.expand_dims(density, -1), domain)
     medium = Medium(domain=domain, sound_speed=sound_speed, density=density, pml_size=pml_size)
 
     # run simulation
@@ -323,6 +323,20 @@ def get_data(sound_speed, density, domain, time_axis, sources, sensor_positions,
     pressure = compiled_simulator(sources)
 
     # get pressure data
-    data = np.squeeze(pressure.params[:, sensor_positions[0], sensor_positions[1]])
+    data = jnp.squeeze(pressure.params[:, sensor_positions[0], sensor_positions[1]])
     
     return pressure, data
+
+@jit
+def get_data_only(sound_speed, density, domain, time_axis, sources, sensor_positions, pml_size=20):
+
+    # get medium
+    sound_speed = FourierSeries(jnp.expand_dims(sound_speed, -1), domain)
+    density = FourierSeries(jnp.expand_dims(density, -1), domain)
+    medium = Medium(domain=domain, sound_speed=sound_speed, density=density, pml_size=pml_size)
+    sensors = Sensors(sensor_positions)
+
+    # run simulation
+    data = simulate_wave_propagation(medium, time_axis, sources=sources, sensors=sensors)
+
+    return data[..., 0]
