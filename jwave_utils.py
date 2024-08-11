@@ -124,16 +124,22 @@ def get_scatterers(N, positions, radius, contrast):
     return scatterer_map
 
 
-def get_point_medium(domain, c0=1500, rho0=1000, pml_size=20,
-                     background_mean=1, background_std=0.008, background_seed=28, 
-                     scatterer_radius=2, scatterer_contrast=1.1):
+def get_point_medium(domain, scatterer_positions, scatterer_radius=2, scatterer_contrast=1.1,
+                     c0=1500, rho0=1000, pml_size=20,
+                     background_mean=1, background_std=0.008, background_seed=28):
     """
-    Get an acoustic medium with a single, centered point scatterer.
+    Get an acoustic medium with defined point scatterers.
 
     Parameters
     ----------
     domain : jwave.geometry.Domain
         Spatial domain.
+    scatterer_positions : np.ndarray
+        Positions of the scatterers in grid points.
+    scatterer_radius : int
+        Radius of the scatterer in grid points.
+    scatterer_contrast : float
+        Contrast of the scatterer.
     c0 : float
         Reference speed of sound in m/s.
     rho0 : float
@@ -146,10 +152,6 @@ def get_point_medium(domain, c0=1500, rho0=1000, pml_size=20,
         Standard deviation of the background map.
     background_seed : int
         Seed for the random number generator.
-    scatterer_radius : int
-        Radius of the scatterer in grid points.
-    scatterer_contrast : float
-        Contrast of the scatterer.
 
     Returns
     -------
@@ -166,8 +168,7 @@ def get_point_medium(domain, c0=1500, rho0=1000, pml_size=20,
     sound_speed = sound_speed * background_map
     density = density * background_map
 
-    # add scatterer
-    scatterer_positions = np.array([[domain.N[0]//2, domain.N[1]//2]], dtype=int)
+    # add scatterers
     scatterer_map = get_scatterers(domain.N, scatterer_positions, scatterer_radius, scatterer_contrast)
     sound_speed[scatterer_map == 1] = c0*scatterer_contrast
     density[scatterer_map == 1] = rho0*scatterer_contrast
@@ -179,8 +180,10 @@ def get_point_medium(domain, c0=1500, rho0=1000, pml_size=20,
     return medium
 
 
-def get_skull_point_medium(domain, skull_slice, c0=1500, rho0=1000, pml_size=20,
-                           scatterer_radius=2, scatterer_contrast=1.1):
+def get_skull_point_medium(domain, skull_slice, 
+                           scatterer_positions, scatterer_radius=2, scatterer_contrast=1.1,
+                           c0=1500, rho0=1000, pml_size=20,
+                           background_mean=1, background_std=0.008, background_seed=28):
     """
     Get an acoustic medium with a skull and single point scatterer.
 
@@ -188,27 +191,53 @@ def get_skull_point_medium(domain, skull_slice, c0=1500, rho0=1000, pml_size=20,
     ----------
     domain : jwave.geometry.Domain
         Spatial domain.
+    skull_slice : np.ndarray
+        Skull slice.
+    scatterer_positions : np.ndarray
+        Positions of the scatterers in grid points.
+    scatterer_radius : int
+        Radius of the scatterer in grid points.
+    scatterer_contrast : float
+        Contrast of the scatterer.
     c0 : float
         Reference speed of sound in m/s.
     rho0 : float
         Reference density in kg/m^3.
     pml_size : int
         Size of the PML in grid points.
+    background_mean : float
+        Mean of the background map.
+    background_std : float
+        Standard deviation of the background map.
+    background_seed : int
+        Seed for the random number generator.
 
     Returns
     -------
     medium : jwave.medium.Medium
         Medium.
     """
+    sound_speed = c0 * np.ones(domain.N)
+    density = rho0 * np.ones(domain.N)
 
-    N = domain.N
-    sound_speed, density = get_background_map(domain, c0, rho0)
-    sound_speed, density = get_single_scatterer(domain, sound_speed, density, c0, rho0, scatterer_radius, scatterer_contrast)
+    # add background noise
+    background_map = get_background(domain.N, mean=background_mean, 
+                                    std=background_std, 
+                                    random_seed=background_seed)
+    sound_speed = sound_speed * background_map
+    density = density * background_map
 
+    # add scatterers
+    scatterer_map = get_scatterers(domain.N, scatterer_positions, scatterer_radius, scatterer_contrast)
+    sound_speed[scatterer_map == 1] = c0*scatterer_contrast
+    density[scatterer_map == 1] = rho0*scatterer_contrast
+
+    # add skull
     skull_mask = skull_slice > 20000
     sound_speed[skull_mask] = 2700
     density[skull_mask] = 1800
 
+    # get jwave discretized medium
     sound_speed = FourierSeries(np.expand_dims(sound_speed, -1), domain)
     density = FourierSeries(np.expand_dims(density, -1), domain)
     medium = Medium(domain=domain, sound_speed=sound_speed, density=density, pml_size=pml_size)
@@ -301,63 +330,3 @@ def get_data(medium, time_axis, sources, sensor_positions):
     data = np.squeeze(pressure.params[:, sensor_positions[0], sensor_positions[1]])
     
     return pressure, data
-
-def compute_time_delays_for_point(x1: np.ndarray, x: int, delta_y: int, c: float, dx: np.ndarray) -> np.ndarray:
-    """
-    Compute the time delays from a point x to every sensor.
-
-    Parameters
-    ----------
-    x1 : np.ndarray
-        x-coordinates of the sensors in grid points.
-    x : int
-        Position of the point of interest in grid points.
-    delta_y : int
-        Difference in y-coordinates of the sensors and the point of interest, in grid points.
-    c : float
-        Speed of sound in m/s.
-    dx : np.ndarray
-        Grid spacing in each dimension in meters.
-
-    Returns
-    -------
-    time_delays : np.ndarray
-        Time delays, in seconds.
-    """
-    scaled_y = delta_y * dx[1]
-    scaled_dx = (x1 - x) * dx[0]
-    return (scaled_y + np.sqrt(scaled_y*scaled_y + scaled_dx * scaled_dx)) / c
-
-def compute_signal(data, element_positions, pt_x, delta_y, time, time_axis, c, dx):
-    """
-    Compute the signal at a given point.
-
-    Parameters
-    ----------
-    data : np.ndarray
-        Pressure data, shape (num_timesteps, num_sensors)
-    element_positions : np.ndarray
-        Positions of the sensors in grid points.
-    pt_x : int
-        Position of the point of interest in grid points.
-    delta_y : int
-        Difference in y-coordinates of the sensors and the point of interest, in grid points.
-    time : int
-        Time, in time steps.
-    time_axis : jwave.geometry.TimeAxis
-        Time axis.
-    c : float
-        Speed of sound in m/s.
-    dx : np.ndarray
-        Grid spacing in each dimension in meters.
-
-    Returns
-    -------
-    signal : float
-        Signal at the point of interest.
-    """
-    times = time - np.round(compute_time_delays_for_point(element_positions[0], pt_x, delta_y, c, dx) / time_axis.dt).astype(int)
-    augmented_times = np.stack([times, np.arange(0, times.shape[0])])
-    augmented_times = augmented_times[:, 0 < augmented_times[0]]
-    augmented_times = augmented_times[:, augmented_times[0] < data.shape[0]].tolist()
-    return np.sum(data[augmented_times[0], augmented_times[1]]).item() * time_axis.dt
