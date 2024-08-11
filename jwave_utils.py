@@ -90,11 +90,7 @@ def get_homogeneous_medium(domain, c0=1500, rho0=1000, pml_size=20,
     sound_speed = sound_speed * background_map
     density = density * background_map
 
-    # get jwave discretized medium
-    sound_speed = FourierSeries(np.expand_dims(sound_speed, -1), domain)
-    density = FourierSeries(np.expand_dims(density, -1), domain)
-    medium = Medium(domain=domain, sound_speed=sound_speed, density=density, pml_size=pml_size)
-    return medium
+    return sound_speed, density
 
 
 def get_scatterers(N, positions, radius, contrast):
@@ -173,11 +169,7 @@ def get_point_medium(domain, scatterer_positions, scatterer_radius=2, scatterer_
     sound_speed[scatterer_map == 1] = c0*scatterer_contrast
     density[scatterer_map == 1] = rho0*scatterer_contrast
 
-    # get jwave discretized medium
-    sound_speed = FourierSeries(np.expand_dims(sound_speed, -1), domain)
-    density = FourierSeries(np.expand_dims(density, -1), domain)
-    medium = Medium(domain=domain, sound_speed=sound_speed, density=density, pml_size=pml_size)
-    return medium
+    return sound_speed, density
 
 def get_skull_medium(domain, skull_slice, 
                            scatterer_positions=None, scatterer_radius=2, scatterer_contrast=1.1,
@@ -237,11 +229,7 @@ def get_skull_medium(domain, skull_slice,
     sound_speed[skull_mask] = 2700
     density[skull_mask] = 1800
 
-    # get jwave discretized medium
-    sound_speed = FourierSeries(np.expand_dims(sound_speed, -1), domain)
-    density = FourierSeries(np.expand_dims(density, -1), domain)
-    medium = Medium(domain=domain, sound_speed=sound_speed, density=density, pml_size=pml_size)
-    return medium
+    return sound_speed, density
 
 
 def get_plane_wave_excitation(domain, time_axis, magnitude, frequency, positions, signal_delay=0):
@@ -279,7 +267,6 @@ def get_plane_wave_excitation(domain, time_axis, magnitude, frequency, positions
     mean = 3*variance
     signal = []
     for i in range(positions.shape[1]):
-        # TODO(vincent): this assumes the positions are all 1 apart
         if signal_delay < 0:
             signal.append(gaussian_window(carrier_signal, t, mean + (i-nelements) * signal_delay * time_axis.dt, variance))
         elif signal_delay > 0:
@@ -297,14 +284,18 @@ def get_plane_wave_excitation(domain, time_axis, magnitude, frequency, positions
     return sources, signal, carrier_signal
 
 
-def get_data(medium, time_axis, sources, sensor_positions):
+def get_data(sound_speed, density, domain, time_axis, sources, sensor_positions, pml_size=20):
     """
     Get the ultrasound pressure data.
 
     Parameters
     ----------
-    medium : jwave.medium.Medium
-        Medium.
+    sound_speed : np.ndarray
+        Sound speed in m/s.
+    density : np.ndarray
+        Density in kg/m^3.
+    domain : jwave.geometry.Domain
+        Spatial domain.
     time_axis : jwave.geometry.TimeAxis
         Time axis.
     sources : jwave.geometry.Sources
@@ -319,6 +310,10 @@ def get_data(medium, time_axis, sources, sensor_positions):
     data : np.ndarray
         Pressure data.
     """
+    # get medium
+    sound_speed = FourierSeries(np.expand_dims(sound_speed, -1), domain)
+    density = FourierSeries(np.expand_dims(density, -1), domain)
+    medium = Medium(domain=domain, sound_speed=sound_speed, density=density, pml_size=pml_size)
 
     # run simulation
     @jit
