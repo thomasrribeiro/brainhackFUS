@@ -44,20 +44,20 @@ def get_receive_beamforming(domain, time_axis, positions, output_data, signal, c
 
     output_data_t = np.asarray(output_data)
 
-    nelements = positions.shape[1]
     transducer_x_start = positions[0][0]
+    transducer_x_end = positions[0][-1]
     transducer_y = positions[1][0]
     def compute_signal(pt_x, pt_y):
         delta_y = abs(transducer_y - pt_y)
         delays = compute_time_delays_for_point(positions[0], pt_x, delta_y)
         signal = np.zeros_like(output_data_t[:, 0])
         slanted_x_coord = int(pt_x - slope * delta_y)
-        if slanted_x_coord > transducer_x_start + nelements - 1 or slanted_x_coord < transducer_x_start:
+        if slanted_x_coord > transducer_x_end or slanted_x_coord < transducer_x_start:
             return 0.0
         for i, delta in enumerate(delays):
-            if abs(positions[0][i] - (pt_x - slope * delta_y)) < delta_y:
+            if abs(positions[0][i] - (pt_x - slope * delta_y)) < delta_y * abs(positions[0][1] - positions[0][0]):
                 signal[:-delta] += output_data_t[delta:, i]
-        return (np.dot(signal, s_stack_t[slanted_x_coord - transducer_x_start]) * time_axis.dt).item()
+        return (np.dot(signal, s_stack_t[(slanted_x_coord - transducer_x_start) // abs(positions[0][1] - positions[0][0])]) * time_axis.dt).item()
 
     receive = np.array([[compute_signal(i, j) for j in range(0, domain.N[1])] for i in range(0, domain.N[0])])
     return receive

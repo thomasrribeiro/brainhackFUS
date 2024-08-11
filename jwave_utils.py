@@ -279,6 +279,7 @@ def get_plane_wave_excitation(domain, time_axis, magnitude, frequency, positions
     mean = 3*variance
     signal = []
     for i in range(positions.shape[1]):
+        # TODO(vincent): this assumes the positions are all 1 apart
         if signal_delay < 0:
             signal.append(gaussian_window(carrier_signal, t, mean + (i-nelements) * signal_delay * time_axis.dt, variance))
         elif signal_delay > 0:
