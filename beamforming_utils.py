@@ -52,15 +52,15 @@ def get_receive_beamforming(domain, time_axis, positions, output_data, signal, c
     def compute_signal(pt_x, pt_y):
         delta_y = abs(transducer_y - pt_y)
         delays = compute_time_delays_for_point(positions[0], pt_x, delta_y)
-        signal = torch.tensor([0.0]).to("cuda:0")
+        signal = torch.zeros_like(output_data_t[:, 0])
         slanted_x_coord = int(pt_x - slope * delta_y)
         if slanted_x_coord > transducer_x_start + nelements - 1 or slanted_x_coord < transducer_x_start:
-            return np.array([0.0])
+            return 0.0
         for i in range(len(delays)):
             if abs(positions[0][i] - (pt_x - slope * delta_y)) < delta_y:
                 delta = delays[i]
-                signal += torch.dot(s_stack_t[slanted_x_coord - transducer_x_start, :-delta], output_data_t[delta:, i])
-        return signal * time_axis.dt
+                signal[:-delta] += output_data_t[delta:, i]
+        return (torch.dot(signal, s_stack_t[slanted_x_coord - transducer_x_start]) * time_axis.dt).item()
 
-    receive = np.array([[compute_signal(i, j).item() for j in range(0, domain.N[1])] for i in range(0, domain.N[0])])
+    receive = np.array([[compute_signal(i, j) for j in range(0, domain.N[1])] for i in range(0, domain.N[0])])
     return receive
