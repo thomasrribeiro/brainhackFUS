@@ -95,39 +95,33 @@ def get_receive_beamforming_medium_specific(domain, medium, time_axis, positions
     # TODO(vincent): assumes spacing of 1 between transducers
     s_stack_t = np.asarray(jnp.vstack([signal[i] for i in range(positions.shape[1])]))
     s_stack_t = s_stack_t / np.max(s_stack_t)
-    
-    def compute_single_segment_delay(x_1, y_1, x_2, y_2):
-        # a weak estimate for the time to get from (x_1,y_1) to (x_2,y_2), assumes ray is relatively vertical
-        sound_reciprocal_sums = 0.0
-        for y in range(y_1, y_2):
-            # TODO(vincent): can vectorize this with np
-            frac_x = (x_1 * (y_2 - y) + x_2 * (y - y_1)) / (y_2 - y_1)
-            int_x, partial_x = int(frac_x), frac_x - int(frac_x)
-            sound_reciprocal_sums += (1 - partial_x) / medium.sound_speed.params[int_x,y,0] + partial_x / medium.sound_speed.params[int_x+1,y,0]
-        ratio = (x_2 -x_1) / (y_2 - y_1)
-        return ((ratio * ratio + 1)**0.5) * sound_reciprocal_sums * domain.dx[0] / time_axis.dt
-    
-    def compute_many_delays(x_1, y_1, xs, y_2):
-        # TODO(vincent): this is inefficient, precompute it
-        sound_reciprocal_sums = np.zeros(xs.shape)
-        for y in range(y_1, y_2):
-            x_coords = np.floor((x_1 * (y_2 - y) + xs * (y - y_1)) / (y_2 - y_1)).astype(int)
-            sound_reciprocal_sums += 1/medium.sound_speed.params[x_coords,y,0]
-        ratios = (xs - x_1) / (y_2 - y_1)
-        return np.sqrt(ratios * ratios + 1) * domain.dx[0] * sound_reciprocal_sums / time_axis.dt
-
-    def compute_time_delays_for_point(x1: np.ndarray, x: int, transducer_y: int, pt_y: int, c: float = c0):
-        first_delay = compute_single_segment_delay(x, pt_y, int(x - (transducer_y - pt_y) * slope), transducer_y)
-        second_delay = compute_many_delays(x, pt_y, x1, transducer_y)
-        return np.round(first_delay + second_delay).astype(int).tolist()
 
     output_data_t = np.asarray(output_data)
 
     transducer_x_start = positions[0][0]
     transducer_x_end = positions[0][-1]
     transducer_y = positions[1][0]
+
+    transducer_spacing = abs(positions[0][1] - positions[0][0])
+
+    # compute a 3D array of the (badly) estimated delays from every point in the grid to every transducer point
+    all_delays = np.zeros([domain.N[0], domain.N[1], positions.shape[1]])
+    for k in range(positions.shape[1]):
+        for j in range(transducer_y - 1, -1, -1):
+            x_range = np.arange(0, domain.N[0])
+            prev_row = (positions[0][k] + x_range * (transducer_y - j - 1)) / (transducer_y - j)
+            prev_delays = all_delays[np.round(prev_row).astype(int), j+1, k]
+            ratios = (positions[0][k] - x_range) / (transducer_y - j)
+            new_delays = np.sqrt(np.square(ratios) + 1) * domain.dx[0] / (medium.sound_speed.params[:, j, 0] * time_axis.dt) 
+            all_delays[:, j, k] = prev_delays + new_delays
+
+
+    def compute_time_delays_for_point(x: int, transducer_y: int, pt_y: int):
+        first_delay = all_delays[x,pt_y,int((x - (transducer_y - pt_y) * slope - transducer_x_end) // transducer_spacing)]
+        second_delay = all_delays[x, pt_y, :]
+        return np.round(first_delay + second_delay).astype(int).tolist()
+
     def compute_signal(pt_x, pt_y):
-        # print(pt_x, pt_y)
         if transducer_y <= pt_y:
             return 0.0
         delta_y = transducer_y - pt_y
@@ -135,11 +129,11 @@ def get_receive_beamforming_medium_specific(domain, medium, time_axis, positions
         slanted_x_coord = int(pt_x - slope * delta_y)
         if slanted_x_coord > transducer_x_end or slanted_x_coord < transducer_x_start:
             return 0.0
-        delays = compute_time_delays_for_point(positions[0], pt_x, transducer_y, pt_y)
+        delays = compute_time_delays_for_point(pt_x, transducer_y, pt_y)
         for i, delta in enumerate(delays):
-            if delta > 0 and abs(positions[0][i] - (pt_x - slope * delta_y)) < delta_y * abs(positions[0][1] - positions[0][0]):
+            if delta > 0 and abs(positions[0][i] - (pt_x - slope * delta_y)) < delta_y * transducer_spacing:
                 signal[:-delta] += output_data_t[delta:, i]
-        return (np.dot(signal, s_stack_t[(slanted_x_coord - transducer_x_start) // abs(positions[0][1] - positions[0][0])]) * time_axis.dt).item()
+        return (np.dot(signal, s_stack_t[(slanted_x_coord - transducer_x_start) // transducer_spacing]) * time_axis.dt).item()
 
     receive = np.array([[compute_signal(i, j) for j in range(0, domain.N[1])] for i in range(0, domain.N[0])])
     return receive

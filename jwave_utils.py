@@ -260,6 +260,7 @@ def get_plane_wave_excitation(domain, time_axis, magnitude, frequency, positions
     carrier_signal : np.ndarray
         Carrier signal at the center frequency of the probe.
     """
+    # TODO(vincent): this doesn't work for signal delays other than 0 and different transducer spacings
     nelements = positions.shape[1]
     t = jnp.arange(0, time_axis.t_end, time_axis.dt)
     carrier_signal = magnitude * jnp.sin(2 * jnp.pi * frequency * t)
