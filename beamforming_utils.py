@@ -127,7 +127,7 @@ def get_receive_beamforming_medium_specific(domain, medium, time_axis, positions
     transducer_x_end = positions[0][-1]
     transducer_y = positions[1][0]
     def compute_signal(pt_x, pt_y):
-        print(pt_x, pt_y)
+        # print(pt_x, pt_y)
         if transducer_y <= pt_y:
             return 0.0
         delta_y = transducer_y - pt_y
@@ -141,6 +141,5 @@ def get_receive_beamforming_medium_specific(domain, medium, time_axis, positions
                 signal[:-delta] += output_data_t[delta:, i]
         return (np.dot(signal, s_stack_t[(slanted_x_coord - transducer_x_start) // abs(positions[0][1] - positions[0][0])]) * time_axis.dt).item()
 
-    print("hello")
     receive = np.array([[compute_signal(i, j) for j in range(0, domain.N[1])] for i in range(0, domain.N[0])])
     return receive
