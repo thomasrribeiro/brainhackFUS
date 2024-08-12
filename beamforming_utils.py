@@ -110,7 +110,9 @@ def get_receive_beamforming_medium_specific(domain, medium, time_axis, positions
         for j in range(transducer_y - 1, -1, -1):
             x_range = np.arange(0, domain.N[0])
             prev_row = (positions[0][k] + x_range * (transducer_y - j - 1)) / (transducer_y - j)
-            prev_delays = all_delays[np.round(prev_row).astype(int), j+1, k]
+            prev_row_floor = np.floor(prev_row).astype(int)
+            frac = prev_row - prev_row_floor
+            prev_delays = (1-frac) * all_delays[prev_row_floor, j+1, k] + frac * all_delays[prev_row_floor+1, j+1, k]
             ratios = (positions[0][k] - x_range) / (transducer_y - j)
             new_delays = np.sqrt(np.square(ratios) + 1) * domain.dx[0] / (medium.sound_speed.params[:, j, 0] * time_axis.dt) 
             all_delays[:, j, k] = prev_delays + new_delays
