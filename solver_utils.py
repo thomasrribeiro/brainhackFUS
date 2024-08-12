@@ -13,7 +13,7 @@ def linear_loss(speed, speed0, J, dy):
 #     return jnp.sum((Ax - b) ** 2)
 
 @jit
-def nonlinear_loss(speed, data0, density0, domain, time_axis, sources, element_positions):
+def nonlinear_loss(speed, data, density0, domain, time_axis, sources, element_positions):
     predicted = get_data_only(speed, density0, domain, time_axis, sources, element_positions)
-    loss = jnp.linalg.norm(data0 - predicted, ord='fro')
+    loss = jnp.linalg.norm(data - predicted, ord='fro')
     return loss
