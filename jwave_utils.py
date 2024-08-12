@@ -232,7 +232,7 @@ def get_skull_medium(domain, skull_slice,
     return sound_speed, density
 
 
-def get_plane_wave_excitation(domain, time_axis, magnitude, frequency, positions, signal_delay=0):
+def get_plane_wave_excitation(domain, time_axis, magnitude, frequency, pitch, positions, angle=0, c0=1500):
     """
     Get a plane wave excitation.
     
@@ -246,10 +246,14 @@ def get_plane_wave_excitation(domain, time_axis, magnitude, frequency, positions
         Magnitude of the excitation.
     frequency : float
         Frequency of the excitation.
+    pitch : float
+        Pitch of the transducer elements in meters.
     positions : np.ndarray
         Positions of the sources in grid points.
-    signal_delay : float
-        Delay in timepoints.
+    angle : float
+        Angle of the plane wave in radians.
+    c0 : float
+        Reference speed of sound in m
 
     Returns
     -------
@@ -267,11 +271,13 @@ def get_plane_wave_excitation(domain, time_axis, magnitude, frequency, positions
     variance = 1/frequency
     mean = 3*variance
     signal = []
+    
+    signal_delay = pitch * np.sin(angle) / c0
     for i in range(positions.shape[1]):
-        if signal_delay < 0:
-            signal.append(gaussian_window(carrier_signal, t, mean + (i-nelements) * signal_delay * time_axis.dt, variance))
-        elif signal_delay > 0:
-            signal.append(gaussian_window(carrier_signal, t, mean + i * signal_delay * time_axis.dt, variance))
+        if angle < 0:
+            signal.append(gaussian_window(carrier_signal, t, mean + (i-nelements) * signal_delay, variance))
+        elif angle > 0:
+            signal.append(gaussian_window(carrier_signal, t, mean + i * signal_delay, variance))
         else:
             signal.append(gaussian_window(carrier_signal, t, mean, variance))
     
