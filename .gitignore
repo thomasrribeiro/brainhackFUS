@@ -1,4 +1,4 @@
-# /data/skull_slice.dcm
+/data/
 *.pyc
 *.mp4
 .DS_STORE

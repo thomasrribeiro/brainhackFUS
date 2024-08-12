@@ -234,7 +234,7 @@ def get_skull_medium(domain, skull_slice,
 
 def get_plane_wave_excitation(domain, time_axis, magnitude, frequency, pitch, positions, angle=0, c0=1500):
     """
-    Get a plane wave excitation.
+    Get a plane wave excitation from a linear probe.
     
     Parameters
     ----------
@@ -251,7 +251,7 @@ def get_plane_wave_excitation(domain, time_axis, magnitude, frequency, pitch, po
     positions : np.ndarray
         Positions of the sources in grid points.
     angle : float
-        Angle of the plane wave in radians.
+        Angle of the plane wave in radians relative to the probe's normal.
     c0 : float
         Reference speed of sound in m
 
