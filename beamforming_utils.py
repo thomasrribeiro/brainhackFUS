@@ -92,7 +92,6 @@ def get_receive_beamforming_medium_specific(domain, medium, time_axis, positions
 
     slope = signal_delay * time_axis.dt * c0 / domain.dx[0].item()
     # slope is in pixel space
-    # TODO(vincent): assumes spacing of 1 between transducers
     s_stack_t = np.asarray(jnp.vstack([signal[i] for i in range(positions.shape[1])]))
     s_stack_t = s_stack_t / np.max(s_stack_t)
 
@@ -104,18 +103,20 @@ def get_receive_beamforming_medium_specific(domain, medium, time_axis, positions
 
     transducer_spacing = abs(positions[0][1] - positions[0][0])
 
-    # compute a 3D array of the (badly) estimated delays from every point in the grid to every transducer point
     all_delays = np.zeros([domain.N[0], domain.N[1], positions.shape[1]])
-    for k in range(positions.shape[1]):
-        for j in range(transducer_y - 1, -1, -1):
-            x_range = np.arange(0, domain.N[0])
-            prev_row = (positions[0][k] + x_range * (transducer_y - j - 1)) / (transducer_y - j)
-            prev_row_floor = np.floor(prev_row).astype(int)
-            frac = prev_row - prev_row_floor
-            prev_delays = (1-frac) * all_delays[prev_row_floor, j+1, k] + frac * all_delays[prev_row_floor+1, j+1, k]
-            ratios = (positions[0][k] - x_range) / (transducer_y - j)
-            new_delays = np.sqrt(np.square(ratios) + 1) * domain.dx[0] / (medium.sound_speed.params[:, j, 0] * time_axis.dt) 
-            all_delays[:, j, k] = prev_delays + new_delays
+    
+    # compute a 3D array of the estimated delays from every point in the grid to every transducer point
+    x_range = np.arange(0, domain.N[0])
+    pos_arr = [[i for i in range(positions.shape[1])]]*domain.N[0]
+    for j in range(transducer_y - 1, -1, -1):
+
+        prev_row = (positions[0][None, :] + x_range[:, None] * (transducer_y - j - 1)) / (transducer_y - j)
+        prev_row_floor = np.floor(prev_row).astype(int)
+        frac = prev_row - prev_row_floor
+        prev_delays = (1-frac) * all_delays[prev_row_floor, j+1, pos_arr] + frac * all_delays[prev_row_floor+1, j+1, pos_arr]
+        ratios = (positions[0][None, :] - x_range[:, None]) / (transducer_y - j)
+        new_delays = np.sqrt(np.square(ratios) + 1) * domain.dx[0] / (medium.sound_speed.params[:, j, 0] * time_axis.dt)[:,None]
+        all_delays[:, j] = prev_delays + new_delays
 
 
     def compute_time_delays_for_point(x: int, transducer_y: int, pt_y: int):
