@@ -1,7 +1,8 @@
 import numpy as np
+from scipy.signal.windows import hann
 import jax.numpy as jnp
 from jax import jit
-from jwave import FourierSeries
+from jwave import FourierSeries, FiniteDifferences
 from jwave.geometry import Domain, Medium, Sources, Sensors
 from jwave.acoustics import simulate_wave_propagation
 from jwave.signal_processing import gaussian_window
@@ -232,7 +233,7 @@ def get_skull_medium(domain, skull_slice,
     return sound_speed, density
 
 
-def get_plane_wave_excitation(domain, time_axis, magnitude, frequency, pitch, positions, angle=0, c0=1500):
+def get_plane_wave_excitation(domain, time_axis, magnitude, frequency, pitch, positions, angle=0, c0=1500, hann_window=False):
     """
     Get a plane wave excitation from a linear probe.
     
@@ -271,16 +272,33 @@ def get_plane_wave_excitation(domain, time_axis, magnitude, frequency, pitch, po
     variance = 1/frequency
     mean = 3*variance
     signal = []
-    
     signal_delay = pitch * np.sin(angle) / c0
-    for i in range(positions.shape[1]):
-        if angle < 0:
-            signal.append(gaussian_window(carrier_signal, t, mean + (i-nelements) * signal_delay, variance))
-        elif angle > 0:
-            signal.append(gaussian_window(carrier_signal, t, mean + i * signal_delay, variance))
-        else:
-            signal.append(gaussian_window(carrier_signal, t, mean, variance))
-    
+
+    if hann_window:
+        ncycles = 10
+        cycle_duration = ncycles / frequency
+        nsamples_per_cycle = int(cycle_duration / time_axis.dt)
+        window = hann(nsamples_per_cycle)
+        signal_w = carrier_signal[:nsamples_per_cycle] * window
+        signal_w = np.pad(signal_w, (0, int(time_axis.Nt) - nsamples_per_cycle), mode='constant')
+
+        for i in range(nelements):
+            # delay = int(i * signal_delay / time_axis.dt)
+            if angle < 0:
+                signal.append(np.roll(signal_w, -int(i * signal_delay / time_axis.dt)))
+            elif angle > 0:
+                signal.append(np.roll(signal_w, -int((i-nelements) * signal_delay / time_axis.dt)))
+            else:
+                signal.append(signal_w)
+    else:
+        for i in range(positions.shape[1]):
+            if angle < 0:
+                signal.append(gaussian_window(carrier_signal, t, mean + (i-nelements) * signal_delay, variance))
+            elif angle > 0:
+                signal.append(gaussian_window(carrier_signal, t, mean + i * signal_delay, variance))
+            else:
+                signal.append(gaussian_window(carrier_signal, t, mean, variance))
+        
     sources = Sources(
         positions=tuple(map(tuple, positions)),
         signals=jnp.vstack([signal[i] for i in range(positions.shape[1])]),
@@ -319,7 +337,9 @@ def get_data(sound_speed, density, domain, time_axis, sources, sensor_positions,
     """
     # get medium
     sound_speed = FourierSeries(jnp.expand_dims(sound_speed, -1), domain)
+    # sound_speed = FiniteDifferences(jnp.expand_dims(sound_speed, -1), domain)
     density = FourierSeries(jnp.expand_dims(density, -1), domain)
+    # density = FiniteDifferences(jnp.expand_dims(density, -1), domain)
     medium = Medium(domain=domain, sound_speed=sound_speed, density=density, pml_size=pml_size)
 
     # run simulation
