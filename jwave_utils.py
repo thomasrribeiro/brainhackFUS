@@ -6,6 +6,7 @@ from jwave import FourierSeries, FiniteDifferences
 from jwave.geometry import Domain, Medium, Sources, Sensors
 from jwave.acoustics import simulate_wave_propagation
 from jwave.signal_processing import gaussian_window
+from kwave.utils.signals import tone_burst
 
 
 def get_domain(N, dx):
@@ -233,7 +234,7 @@ def get_skull_medium(domain, skull_slice,
     return sound_speed, density
 
 
-def get_plane_wave_excitation(domain, time_axis, magnitude, frequency, pitch, positions, angle=0, c0=1500, hann_window=False):
+def get_plane_wave_excitation(domain, time_axis, magnitude, frequency, pitch, positions, angle=0, c0=1500, hann_window=False, tone=False):
     """
     Get a plane wave excitation from a linear probe.
     
@@ -274,8 +275,18 @@ def get_plane_wave_excitation(domain, time_axis, magnitude, frequency, pitch, po
     signal = []
     signal_delay = pitch * np.sin(angle) / c0
 
-    if hann_window:
-        ncycles = 10
+    if tone:
+        ncycles = 2.5
+        signal_w = tone_burst(1/time_axis.dt, frequency, ncycles, signal_length = int(time_axis.Nt))
+        for i in range(nelements):
+            if angle < 0:
+                signal.append(np.roll(signal_w, -int(i * signal_delay / time_axis.dt)))
+            elif angle > 0:
+                signal.append(np.roll(signal_w, -int((i-nelements) * signal_delay / time_axis.dt)))
+            else:
+                signal.append(signal_w)
+    elif hann_window:
+        ncycles = 2.5
         cycle_duration = ncycles / frequency
         nsamples_per_cycle = int(cycle_duration / time_axis.dt)
         window = hann(nsamples_per_cycle)
