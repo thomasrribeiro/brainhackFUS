@@ -65,6 +65,7 @@ def beamform_delay_and_sum(
         num_time_samples, num_channels = iq_signals.shape
     elif iq_signals.ndim == 3:
         num_time_samples, num_channels, num_echoes = iq_signals.shape
+        print(f"Note: Vincent found a batch size of ~1000 best balances batching and memory tradeoffs. You are using a batch size of {num_echoes}.")
     else:
         raise ValueError(
             "Expected iq_signals to have shape (time_samples, num_channels) or "
@@ -90,9 +91,15 @@ def beamform_delay_and_sum(
     )
 
     # Beamform
-    iq_signals_column_vec = iq_signals.reshape(-1, 1)
+    if iq_signals.ndim == 2:
+        iq_signals_column_vec = iq_signals.reshape(-1, 1)
+    else:
+        iq_signals_column_vec = iq_signals.reshape(-1, num_echoes)
     beamformed_iq_signals = das_matrix @ iq_signals_column_vec
-    beamformed_iq_signals = beamformed_iq_signals.reshape(x.shape)
+    if iq_signals.ndim == 2:
+        beamformed_iq_signals = beamformed_iq_signals.reshape(x.shape)
+    else:
+        beamformed_iq_signals = beamformed_iq_signals.reshape(x.shape + (-1,))
 
     return beamformed_iq_signals
 
